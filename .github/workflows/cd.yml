@@ -1,0 +1,32 @@
+name: Terraform CD
+
+# 언제 실행할까? -> main 브랜치에 코드가 "Push"(Merge 포함) 될 때만
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  terraform:
+    name: "Terraform Apply"
+    runs-on: ubuntu-latest
+    
+    # 키 설정은 똑같습니다
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ap-northeast-2
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init
+        run: terraform init
+
+      # ★ 핵심: -auto-approve 옵션
+      # 로봇은 "yes"를 입력할 수 없으므로, "묻지 말고 실행해"라는 옵션을 줍니다.
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
