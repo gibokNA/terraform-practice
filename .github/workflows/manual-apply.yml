@@ -1,0 +1,29 @@
+name: Manual Apply
+
+# 버튼을 눌렀을 때만 실행 (workflow_dispatch)
+on:
+  workflow_dispatch:
+
+jobs:
+  apply:
+    name: "Terraform Apply"
+    runs-on: ubuntu-latest
+    
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ap-northeast-2
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init
+        run: terraform init
+
+      # 당연히 여기도 -auto-approve가 있어야 버튼 한 번에 끝납니다.
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
