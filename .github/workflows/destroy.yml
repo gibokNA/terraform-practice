@@ -1,0 +1,29 @@
+name: Manual Destroy
+
+# "workflow_dispatch" -> 사용자가 버튼을 누를 때만 실행됨
+on:
+  workflow_dispatch:
+
+jobs:
+  destroy:
+    name: "Terraform Destroy"
+    runs-on: ubuntu-latest
+    
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ap-northeast-2
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init
+        run: terraform init
+
+      # destroy 명령어도 -auto-approve가 필요합니다.
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
