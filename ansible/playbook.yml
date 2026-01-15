@@ -1,8 +1,8 @@
 ---
-- name: Install Docker on EC2
+- name: Install Docker on Amazon Linux 2
   hosts: all
-  become: yes  # root 권한으로 실행 (sudo)
-  remote_user: ec2-user
+  become: yes  # root 권한
+  remote_user: ec2-user  # ★ 중요: Amazon Linux 기본 유저
 
   tasks:
     - name: Update all packages
@@ -10,10 +10,11 @@
         name: "*"
         state: latest
 
-    - name: Install Docker
-      amazon_linux_extras:
-        name: docker
-        state: present
+    # Amazon Linux 2 전용 Docker 설치 명령어
+    - name: Install Docker via amazon-linux-extras
+      shell: "amazon-linux-extras install docker -y"
+      args:
+        creates: /usr/bin/docker # 이미 설치돼있으면 실행 안 함
 
     - name: Start Docker service
       service:
