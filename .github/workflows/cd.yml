@@ -20,6 +20,9 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
+        with:
+          # [추가] 중요! output 값을 깨끗하게 가져오기 위해 wrapper를 끕니다.
+          terraform_wrapper: false
 
       - name: Terraform Init
         run: terraform init
