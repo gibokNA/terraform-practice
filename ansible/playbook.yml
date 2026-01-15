@@ -1,0 +1,28 @@
+---
+- name: Install Docker on EC2
+  hosts: all
+  become: yes  # root 권한으로 실행 (sudo)
+  remote_user: ec2-user
+
+  tasks:
+    - name: Update all packages
+      yum:
+        name: "*"
+        state: latest
+
+    - name: Install Docker
+      amazon_linux_extras:
+        name: docker
+        state: present
+
+    - name: Start Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add ec2-user to docker group
+      user:
+        name: ec2-user
+        groups: docker
+        append: yes

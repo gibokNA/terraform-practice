@@ -1,16 +1,14 @@
-name: Terraform CD
+name: Terraform CD & Ansible
 
-# 언제 실행할까? -> main 브랜치에 코드가 "Push"(Merge 포함) 될 때만
 on:
   push:
     branches: [ "main" ]
 
 jobs:
-  terraform:
-    name: "Terraform Apply"
+  deploy:
+    name: "Terraform Apply & Ansible"
     runs-on: ubuntu-latest
     
-    # 키 설정은 똑같습니다
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -26,7 +24,32 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      # ★ 핵심: -auto-approve 옵션
-      # 로봇은 "yes"를 입력할 수 없으므로, "묻지 말고 실행해"라는 옵션을 줍니다.
       - name: Terraform Apply
+        # apply가 성공하면 output으로 IP가 나옵니다.
         run: terraform apply -auto-approve
+
+      # ---------------------------------------------------
+      # 여기서부터 Ansible 단계 추가
+      # ---------------------------------------------------
+      
+      - name: Get EC2 IP from Terraform Output
+        id: get_ip
+        # terraform output 명령어로 IP만 쏙 뽑아서 환경변수에 저장합니다.
+        run: |
+          echo "EC2_PUBLIC_IP=$(terraform output -raw public_ip)" >> $GITHUB_ENV
+
+      - name: Save SSH Key
+        # Secrets에 저장해둔 키를 파일로 만듭니다.
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > key.pem
+          chmod 600 key.pem
+
+      - name: Run Ansible Playbook
+        # 1. StrictHostKeyChecking=no: 처음 접속할 때 "진짜 연결할래?" 묻는거 무시
+        # 2. -i "$EC2_PUBLIC_IP,": 인벤토리 파일 대신 IP를 직접 지정 (뒤에 콤마 필수!)
+        run: |
+          ansible-playbook -i "$EC2_PUBLIC_IP," \
+            --private-key key.pem \
+            --user ec2-user \
+            --ssh-common-args='-o StrictHostKeyChecking=no' \
+            ansible/playbook.yml
