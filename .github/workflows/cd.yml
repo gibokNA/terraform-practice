@@ -48,17 +48,14 @@ jobs:
           chmod 600 key.pem
 
       - name: Run Ansible Playbook
-        # [추가] 환경 변수로 설정을 주입합니다.
         env:
-          # 1. SFTP 대신 SCP를 사용하여 파일 전송 안정성 확보 (가장 중요!)
           ANSIBLE_SCP_IF_SSH: "true"
-          # 2. 파이썬 경고 무시 (선택 사항이나 로그를 깔끔하게 함)
           ANSIBLE_HOST_KEY_CHECKING: "false"
-
         run: |
+          # 주석은 명령어 시작 전에 적어야 안전합니다.
+          # 파이썬 인터프리터를 /usr/bin/python3로 명시합니다.
           ansible-playbook -i "$EC2_PUBLIC_IP," \
             --private-key key.pem \
             --user ec2-user \
-            # [추가] 파이썬 인터프리터를 /usr/bin/python3로 명시
             -e "ansible_python_interpreter=/usr/bin/python3" \
             ansible/playbook.yml
