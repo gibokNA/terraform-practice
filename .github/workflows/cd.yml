@@ -54,12 +54,13 @@ jobs:
           ANSIBLE_SCP_IF_SSH: "true"
           # 2. 파이썬 경고 무시 (선택 사항이나 로그를 깔끔하게 함)
           ANSIBLE_HOST_KEY_CHECKING: "false"
-          
+
         # 1. StrictHostKeyChecking=no: 처음 접속할 때 "진짜 연결할래?" 묻는거 무시
         # 2. -i "$EC2_PUBLIC_IP,": 인벤토리 파일 대신 IP를 직접 지정 (뒤에 콤마 필수!)
         run: |
           ansible-playbook -i "$EC2_PUBLIC_IP," \
             --private-key key.pem \
             --user ec2-user \
-            --ssh-common-args='-o StrictHostKeyChecking=no' \
+            # [추가] 파이썬 인터프리터를 /usr/bin/python3로 명시
+            -e "ansible_python_interpreter=/usr/bin/python3" \
             ansible/playbook.yml
