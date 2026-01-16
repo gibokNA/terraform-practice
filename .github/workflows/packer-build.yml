@@ -1,0 +1,47 @@
+name: Packer Build
+
+# 언제 실행할까요?
+# 1. main 브랜치에 'aws-ami.pkr.hcl'이나 'ansible/' 폴더 내용이 변경되어 Push 될 때
+# 2. 또는 수동으로 버튼을 누를 때 (workflow_dispatch)
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'aws-ami.pkr.hcl'
+      - 'ansible/**'
+  workflow_dispatch:
+
+jobs:
+  packer:
+    runs-on: ubuntu-latest
+    name: Run Packer
+
+    # AWS 권한 설정 (GitHub Secrets 사용)
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ap-northeast-2
+
+    steps:
+      # 1. 코드 가져오기
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # 2. Packer 설치
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: "latest"
+
+      # 3. Ansible 설치 (Packer가 내부적으로 Ansible을 실행하기 위해 필요)
+      - name: Install Ansible
+        run: |
+          pip install ansible
+
+      # 4. Packer 초기화 (플러그인 다운로드)
+      - name: Packer Init
+        run: packer init .
+
+      # 5. Packer 빌드 (AMI 생성)
+      - name: Packer Build
+        run: packer build -color=false -on-error=abort .
