@@ -2,8 +2,8 @@
 
 terraform {
   backend "s3" {
-    bucket = "terraform-state-gibok-2026"
-    key    = "terraform/state.tfstate"
+    bucket = "terraform-state-gibok-2026"  # 사용자님의 버킷 이름 유지
+    key    = "terraform/eks-state.tfstate" # 키 경로를 살짝 변경해 겹침 방지
     region = "ap-northeast-2"
     encrypt = true
     dynamodb_table = "terraform-lock"
@@ -14,119 +14,67 @@ provider "aws" {
   region = "ap-northeast-2"
 }
 
-# 1. VPC & Subnet 조회
-data "aws_vpc" "default" {
-  default = true
-}
+# 1. VPC 모듈 (EKS 전용 네트워크 구성)
+# NAT Gateway를 끄고 Public Subnet만 사용하여 비용을 아낍니다.
+module "vpc" {
+  source = "terraform-aws-modules/vpc/aws"
+  version = "5.0.0"
 
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
+  name = "eks-vpc"
+  cidr = "10.0.0.0/16"
 
-  filter {
-    name   = "availability-zone"
-    values = ["ap-northeast-2a", "ap-northeast-2c"]
-  }
-}
+  azs             = ["ap-northeast-2a", "ap-northeast-2c"]
+  public_subnets  = ["10.0.1.0/24", "10.0.2.0/24"]
 
-# 2. AMI 조회
-data "aws_ami" "golden_image" {
-  most_recent = true
-  owners      = ["self"] 
-
-  filter {
-    name   = "name"
-    values = ["golden-image-docker-*"] 
-  }
-
-  filter {
-    name   = "state"
-    values = ["available"]
-  }
-}
-
-# 3. 보안 그룹
-resource "aws_security_group" "ssh_allow" {
-  name        = "allow_ssh_from_anywhere_asg"
-  description = "Allow SSH inbound traffic for ASG"
-  vpc_id      = data.aws_vpc.default.id
-
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-# 4. 시작 템플릿
-resource "aws_launch_template" "app_lt" {
-  name_prefix   = "app-launch-template-"
-  image_id      = data.aws_ami.golden_image.id 
-  instance_type = "t2.micro"
-  key_name      = "terraform-key"
-
-  network_interfaces {
-    associate_public_ip_address = true
-    security_groups             = [aws_security_group.ssh_allow.id]
-  }
-
-  tag_specifications {
-    resource_type = "instance"
-    tags = {
-      Name = "ASG-Instance"
-    }
-  }
-}
-
-# 5. 오토 스케일링 그룹
-resource "aws_autoscaling_group" "app_asg" {
-  name                = "app-asg"
-  desired_capacity    = 2
-  max_size            = 3
-  min_size            = 1
+  # 비용 절약 설정 (NAT Gateway 미사용)
+  enable_nat_gateway = false
+  enable_vpn_gateway = false
   
-  vpc_zone_identifier = data.aws_subnets.default.ids
+  # 노드가 Public IP를 받아야 인터넷 통신 가능 (이미지 Pull 등)
+  map_public_ip_on_launch = true
 
-  launch_template {
-    id      = aws_launch_template.app_lt.id
-    version = "$Latest"
-  }
-
-  health_check_type         = "EC2"
-  health_check_grace_period = 300
-
-  tag {
-    key                 = "Name"
-    value               = "ASG-Web-Server"
-    propagate_at_launch = true
+  # EKS 로드밸런서 생성을 위한 필수 태그
+  public_subnet_tags = {
+    "kubernetes.io/role/elb" = 1
   }
 }
 
-# [추가됨] 6. 스케일링 정책 (Target Tracking)
-# 목표: 평균 CPU 사용률을 30%로 유지해라. (넘으면 늘리고, 적으면 줄임)
-resource "aws_autoscaling_policy" "target_tracking_cpu" {
-  name                   = "target-tracking-cpu-30"
-  policy_type            = "TargetTrackingScaling"
-  autoscaling_group_name = aws_autoscaling_group.app_asg.name
+# 2. EKS 클러스터 모듈
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "19.15.3"
 
-  target_tracking_configuration {
-    predefined_metric_specification {
-      predefined_metric_type = "ASGAverageCPUUtilization"
+  cluster_name    = "my-practice-cluster"
+  cluster_version = "1.27"
+
+  # 클러스터 접근 권한 설정 (Public)
+  cluster_endpoint_public_access  = true
+
+  vpc_id                   = module.vpc.vpc_id
+  subnet_ids               = module.vpc.public_subnets
+
+  # 관리형 노드 그룹 (워커 노드)
+  eks_managed_node_groups = {
+    initial = {
+      name = "node-group-1"
+      
+      # t2.micro는 K8s 구동에 메모리가 부족하여 t3.small 권장
+      instance_types = ["t3.small"] 
+      
+      min_size     = 1
+      max_size     = 2
+      desired_size = 1
     }
-    target_value = 30.0
   }
 }
 
-output "asg_name" {
-  value = aws_autoscaling_group.app_asg.name
+# 출력값: 클러스터 접속에 필요한 정보
+output "cluster_endpoint" {
+  description = "Endpoint for EKS control plane"
+  value       = module.eks.cluster_endpoint
+}
+
+output "cluster_name" {
+  description = "Kubernetes Cluster Name"
+  value       = module.eks.cluster_name
 }
