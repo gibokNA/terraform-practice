@@ -1,5 +1,3 @@
-# aws-ami.pkr.hcl
-
 packer {
   required_plugins {
     amazon = {
@@ -19,7 +17,6 @@ source "amazon-ebs" "amazon_linux" {
   instance_type   = "t2.micro"
   ssh_username    = "ec2-user"
 
-  # Base Image 검색 (Terraform의 data "aws_ami"와 동일한 로직)
   source_ami_filter {
     filters = {
       name                = "amzn2-ami-hvm-*-x86_64-gp2"
@@ -37,18 +34,15 @@ build {
     "source.amazon-ebs.amazon_linux"
   ]
 
-  # 기존 Ansible Playbook을 그대로 재사용합니다.
   provisioner "ansible" {
     playbook_file = "./ansible/playbook.yml"
     
-    # Ansible 접속 시 호스트 키 확인을 건너뛰고, ec2-user 권한 사용 설정
+    # [수정됨] 통신 안정성을 위한 옵션 추가 (Python3 지정, SCP 강제 사용)
     extra_arguments = [ 
-      "--extra-vars", "ansible_host_key_checking=False",
+      "--extra-vars", "ansible_host_key_checking=False ansible_python_interpreter=/usr/bin/python3 ansible_scp_if_ssh=true",
       "--become" 
     ]
     user = "ec2-user"
-    
-    # 중요: Packer가 띄운 임시 서버와 로컬 Ansible 간의 통신 설정
     use_proxy = false
   }
 }
