@@ -14,12 +14,11 @@ provider "aws" {
   region = "ap-northeast-2"
 }
 
-# 1. VPC 정보 조회
+# 1. VPC & Subnet 조회
 data "aws_vpc" "default" {
   default = true
 }
 
-# [수정됨] Subnet 조회 시, t2.micro를 지원하는 "2a"와 "2c" 존만 가져오도록 필터링
 data "aws_subnets" "default" {
   filter {
     name   = "vpc-id"
@@ -96,7 +95,6 @@ resource "aws_autoscaling_group" "app_asg" {
   max_size            = 3
   min_size            = 1
   
-  # 필터링된 서브넷(2a, 2c)만 사용하므로 에러가 사라집니다.
   vpc_zone_identifier = data.aws_subnets.default.ids
 
   launch_template {
@@ -111,6 +109,21 @@ resource "aws_autoscaling_group" "app_asg" {
     key                 = "Name"
     value               = "ASG-Web-Server"
     propagate_at_launch = true
+  }
+}
+
+# [추가됨] 6. 스케일링 정책 (Target Tracking)
+# 목표: 평균 CPU 사용률을 30%로 유지해라. (넘으면 늘리고, 적으면 줄임)
+resource "aws_autoscaling_policy" "target_tracking_cpu" {
+  name                   = "target-tracking-cpu-30"
+  policy_type            = "TargetTrackingScaling"
+  autoscaling_group_name = aws_autoscaling_group.app_asg.name
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 30.0
   }
 }
 
