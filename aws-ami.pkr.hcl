@@ -34,10 +34,18 @@ build {
     "source.amazon-ebs.amazon_linux"
   ]
 
+  # [추가됨] Ansible 실행 전에 Python 3를 먼저 설치합니다.
+  # 이게 없으면 최신 Ansible이 Amazon Linux 2와 통신하다가 에러가 납니다.
+  provisioner "shell" {
+    inline = [
+      "sudo amazon-linux-extras install python3 -y"
+    ]
+  }
+
   provisioner "ansible" {
     playbook_file = "./ansible/playbook.yml"
     
-    # [수정됨] 통신 안정성을 위한 옵션 추가 (Python3 지정, SCP 강제 사용)
+    # Python 3로 실행하도록 명시하고, SCP를 사용해 전송 오류 방지
     extra_arguments = [ 
       "--extra-vars", "ansible_host_key_checking=False ansible_python_interpreter=/usr/bin/python3 ansible_scp_if_ssh=true",
       "--become" 
