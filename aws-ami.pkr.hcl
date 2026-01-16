@@ -4,10 +4,7 @@ packer {
       version = ">= 1.2.8"
       source  = "github.com/hashicorp/amazon"
     }
-    ansible = {
-      version = ">= 1.1.0"
-      source  = "github.com/hashicorp/ansible"
-    }
+    # Ansible 플러그인은 이제 필요 없지만, 혹시 모르니 남겨둬도 상관없습니다.
   }
 }
 
@@ -34,24 +31,25 @@ build {
     "source.amazon-ebs.amazon_linux"
   ]
 
-  # [수정됨] 충돌 나는 extras 대신, yum으로 안전하게 업데이트 및 pip 설치
-  # sleep 30: 인스턴스 부팅 직후 네트워크/패키지 매니저가 안정화될 때까지 대기
+  # [대체 방안] Ansible 대신 Shell 스크립트로 직접 설치
+  # 장점: SSH 연결 문제나 Python 버전 호환성 문제 없이 확실하게 동작함
   provisioner "shell" {
     inline = [
+      # 1. 부팅 안정화 대기
       "sleep 30",
+      
+      # 2. 패키지 업데이트
       "sudo yum update -y",
-      "sudo yum install -y python3-pip"
+      
+      # 3. Docker 설치 (Amazon Linux Extras 사용)
+      "sudo amazon-linux-extras install docker -y",
+      
+      # 4. Docker 실행 및 자동 시작 설정
+      "sudo systemctl start docker",
+      "sudo systemctl enable docker",
+      
+      # 5. 권한 설정 (ec2-user를 docker 그룹에 추가)
+      "sudo usermod -aG docker ec2-user"
     ]
-  }
-
-  provisioner "ansible" {
-    playbook_file = "./ansible/playbook.yml"
-    
-    extra_arguments = [ 
-      "--extra-vars", "ansible_host_key_checking=False ansible_python_interpreter=/usr/bin/python3 ansible_scp_if_ssh=true",
-      "--become" 
-    ]
-    user = "ec2-user"
-    use_proxy = false
   }
 }
