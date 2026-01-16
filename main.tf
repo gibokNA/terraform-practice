@@ -9,7 +9,6 @@ terraform {
     dynamodb_table = "terraform-lock"
   }
 
-  # [추가됨] AWS Provider 버전을 5.x로 고정 (6.x 사용 시 에러 방지)
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -42,13 +41,15 @@ module "vpc" {
   }
 }
 
-# 2. EKS 클러스터 모듈 (v19.15.3은 AWS Provider v5와 호환됨)
+# 2. EKS 클러스터 모듈
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "19.15.3"
 
   cluster_name    = "my-practice-cluster"
-  cluster_version = "1.27"
+  
+  # [수정됨] 1.27 -> 1.30 (AWS 지원 버전으로 상향)
+  cluster_version = "1.30"
 
   cluster_endpoint_public_access = true
 
