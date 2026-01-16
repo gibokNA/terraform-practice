@@ -3,7 +3,7 @@
 terraform {
   backend "s3" {
     bucket = "terraform-state-gibok-2026"
-    key = "terraform/state.tfstate"
+    key    = "terraform/state.tfstate"
     region = "ap-northeast-2"
     encrypt = true
     dynamodb_table = "terraform-lock"
@@ -14,27 +14,40 @@ provider "aws" {
   region = "ap-northeast-2"
 }
 
-data "aws_ami" "amazon_linux_2" {
-  most_recent = true
-  owners      = ["amazon"]
+# 1. VPC & Subnet 정보 조회 (ASG가 서버를 배치할 위치 파악)
+data "aws_vpc" "default" {
+  default = true
+}
 
+data "aws_subnets" "default" {
   filter {
-    name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
   }
 }
 
-# [추가 1] 보안 그룹 생성: SSH(22) 접속 허용
-resource "aws_security_group" "ssh_allow" {
-  name        = "allow_ssh_from_anywhere"
-  description = "Allow SSH inbound traffic"
+# 2. AMI 조회: Amazon Linux가 아니라 "우리가 Packer로 만든 이미지"를 찾습니다.
+data "aws_ami" "golden_image" {
+  most_recent = true
+  owners      = ["self"] # ★ 중요: 내 계정(Self)에서 찾기
 
-  # 들어오는 트래픽 (Ingress): 전 세계(0.0.0.0/0)에서 22번 포트 접속 허용
+  filter {
+    name   = "name"
+    values = ["golden-image-docker-*"] # Packer 설정 파일의 이름 규칙과 일치
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
+
+# 3. 보안 그룹 (기존과 동일)
+resource "aws_security_group" "ssh_allow" {
+  name        = "allow_ssh_from_anywhere_asg"
+  description = "Allow SSH inbound traffic for ASG"
+  vpc_id      = data.aws_vpc.default.id
+
   ingress {
     from_port   = 22
     to_port     = 22
@@ -42,7 +55,6 @@ resource "aws_security_group" "ssh_allow" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # 나가는 트래픽 (Egress): 서버가 인터넷에서 뭘 다운로드 받을 수 있게 다 열어둠
   egress {
     from_port   = 0
     to_port     = 0
@@ -51,19 +63,56 @@ resource "aws_security_group" "ssh_allow" {
   }
 }
 
-resource "aws_instance" "ci-test-server" {
-  ami           = data.aws_ami.amazon_linux_2.id
+# 4. 시작 템플릿 (Launch Template): "무엇을" 띄울 것인가?
+# aws_instance 리소스 대신 이걸 사용합니다.
+resource "aws_launch_template" "app_lt" {
+  name_prefix   = "app-launch-template-"
+  image_id      = data.aws_ami.golden_image.id # Packer로 만든 AMI 사용
   instance_type = "t2.micro"
   key_name      = "terraform-key"
 
-  # [추가 2] 위에서 만든 보안 그룹을 이 EC2에 장착!
-  vpc_security_group_ids = [aws_security_group.ssh_allow.id]
+  # 네트워크 설정
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [aws_security_group.ssh_allow.id]
+  }
 
-  tags = {
-    Name = "CI-Test-Server"
+  # 태그 설정
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "ASG-Instance"
+    }
   }
 }
 
-output "public_ip" {
-  value = aws_instance.ci-test-server.public_ip
+# 5. 오토 스케일링 그룹 (ASG): "어떻게, 얼마나" 띄울 것인가?
+resource "aws_autoscaling_group" "app_asg" {
+  name                = "app-asg"
+  desired_capacity    = 2 # 평소에 2대 유지
+  max_size            = 3 # 최대 3대까지 늘어남
+  min_size            = 1 # 최소 1대는 무조건 유지
+  
+  # 위에서 조회한 Default VPC의 서브넷들에 골고루 배포
+  vpc_zone_identifier = data.aws_subnets.default.ids
+
+  launch_template {
+    id      = aws_launch_template.app_lt.id
+    version = "$Latest"
+  }
+
+  # 인스턴스 상태 확인 방식 (EC2 상태 기준)
+  health_check_type         = "EC2"
+  health_check_grace_period = 300
+
+  tag {
+    key                 = "Name"
+    value               = "ASG-Web-Server"
+    propagate_at_launch = true
+  }
+}
+
+# 출력값: ASG는 IP가 유동적이므로, 그룹 이름만 출력해봅니다.
+output "asg_name" {
+  value = aws_autoscaling_group.app_asg.name
 }
